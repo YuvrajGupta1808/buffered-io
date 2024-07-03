@@ -1,14 +1,14 @@
 /**************************************************************
-* Class::  CSC-415-0# Spring 2024
-* Name::
-* Student ID::
-* GitHub-Name::
+* Class::  CSC-415-01 Summer 2024
+* Name:: Yuvraj Gupta
+* Student ID:: 922933190
+* GitHub-Name:: YuvrajGupta1808
 * Project:: Assignment 5 – Buffered I/O read
 *
-* File:: <name of this file>
+* File:: b_io.c
 *
-* Description::
-*
+* Description:: Implementation of buffered I/O functions for 
+* opening, reading, and closing files using custom buffers.
 **************************************************************/
 #include <stdio.h>
 #include <unistd.h>
@@ -19,114 +19,146 @@
 #include "b_io.h"
 #include "fsLowSmall.h"
 
-#define MAXFCBS 20	//The maximum number of files open at one time
+#define MAXFCBS 20    // The maximum number of files open at one time
+#define B_CHUNK_SIZE 512  // Define the chunk size for buffering
 
-
-// This structure is all the information needed to maintain an open file
-// It contains a pointer to a fileInfo strucutre and any other information
-// that you need to maintain your open file.
 typedef struct b_fcb
-	{
-	fileInfo * fi;	//holds the low level systems file info
-
-	// Add any other needed variables here to track the individual open file
-
-
-
-	} b_fcb;
-	
-//static array of file control blocks
+{
+    fileInfo *fi;        // holds the low level systems file info
+    char *buffer;        // buffer to hold file data
+    int buffer_index;    // index to track the current position in buffer
+    int buffer_length;   // length of valid data in the buffer
+    int file_index;      // index to track the current position in the file
+} b_fcb;
+    
+// static array of file control blocks
 b_fcb fcbArray[MAXFCBS];
 
 // Indicates that the file control block array has not been initialized
-int startup = 0;	
+int startup = 0;  
 
-// Method to initialize our file system / file control blocks
-// Anything else that needs one time initialization can go in this routine
-void b_init ()
-	{
-	if (startup)
-		return;			//already initialized
+void b_init()
+{
+    if (startup)
+        return;  // already initialized
 
-	//init fcbArray to all free
-	for (int i = 0; i < MAXFCBS; i++)
-		{
-		fcbArray[i].fi = NULL; //indicates a free fcbArray
-		}
-		
-	startup = 1;
-	}
+    // init fcbArray to all free
+    for (int i = 0; i < MAXFCBS; i++)
+    {
+        fcbArray[i].fi = NULL; // indicates a free fcbArray
+    }
 
-//Method to get a free File Control Block FCB element
-b_io_fd b_getFCB ()
-	{
-	for (int i = 0; i < MAXFCBS; i++)
-		{
-		if (fcbArray[i].fi == NULL)
-			{
-			fcbArray[i].fi = (fileInfo *)-2; // used but not assigned
-			return i;		//Not thread safe but okay for this project
-			}
-		}
+    startup = 1;
+}
 
-	return (-1);  //all in use
-	}
+// Method to get a free File Control Block FCB element
+b_io_fd b_getFCB()
+{
+    for (int i = 0; i < MAXFCBS; i++)
+    {
+        if (fcbArray[i].fi == NULL)
+        {
+            fcbArray[i].fi = (fileInfo *)-2; // used but not assigned
+            return i;  // Not thread safe but okay for this project
+        }
+    }
+    return (-1);  // all in use
+}
 
-// b_open is called by the "user application" to open a file.  This routine is 
-// similar to the Linux open function.  	
-// You will create your own file descriptor which is just an integer index into an
-// array of file control blocks (fcbArray) that you maintain for each open file.  
-// For this assignment the flags will be read only and can be ignored.
+b_io_fd b_open(char *filename, int flags)
+{
+    if (startup == 0) b_init();  // Initialize our system
 
-b_io_fd b_open (char * filename, int flags)
-	{
-	if (startup == 0) b_init();  //Initialize our system
+    int fd = b_getFCB();
+    if (fd == -1) return -1; // no available FCB
 
-	//*** TODO ***//  Write open function to return your file descriptor
-	//				  You may want to allocate the buffer here as well
-	//				  But make sure every file has its own buffer
+    fileInfo *fi = GetFileInfo(filename);
+    if (fi == NULL) return -1; // file not found
 
-	// This is where you are going to want to call GetFileInfo and b_getFCB
-	}
+    fcbArray[fd].fi = fi;
+    fcbArray[fd].buffer = (char *)malloc(B_CHUNK_SIZE); // allocate buffer
+    if (fcbArray[fd].buffer == NULL) return -1; // malloc failed
 
+    fcbArray[fd].buffer_index = 0;
+    fcbArray[fd].buffer_length = 0;
+    fcbArray[fd].file_index = 0;
 
+    return fd;
+}
 
-// b_read functions just like its Linux counterpart read.  The user passes in
-// the file descriptor (index into fcbArray), a buffer where thay want you to 
-// place the data, and a count of how many bytes they want from the file.
-// The return value is the number of bytes you have copied into their buffer.
-// The return value can never be greater then the requested count, but it can
-// be less only when you have run out of bytes to read.  i.e. End of File	
-int b_read (b_io_fd fd, char * buffer, int count)
-	{
-	//*** TODO ***//  
-	// Write buffered read function to return the data and # bytes read
-	// You must use LBAread and you must buffer the data in B_CHUNK_SIZE byte chunks.
-		
-	if (startup == 0) b_init();  //Initialize our system
+int b_read(b_io_fd fd, char *buffer, int count)
+{
+    if (startup == 0) b_init();  // Initialize our system
 
-	// check that fd is between 0 and (MAXFCBS-1)
-	if ((fd < 0) || (fd >= MAXFCBS))
-		{
-		return (-1); 					//invalid file descriptor
-		}
+    // check that fd is between 0 and (MAXFCBS-1)
+    if ((fd < 0) || (fd >= MAXFCBS))
+    {
+        return -1;  // invalid file descriptor
+    }
 
-	// and check that the specified FCB is actually in use	
-	if (fcbArray[fd].fi == NULL)		//File not open for this descriptor
-		{
-		return -1;
-		}	
+    // and check that the specified FCB is actually in use  
+    if (fcbArray[fd].fi == NULL || fcbArray[fd].buffer == NULL)  // File not open for this descriptor
+    {
+        return -1;
+    }
 
-	// Your Read code here - the only function you call to get data is LBAread.
-	// Track which byte in the buffer you are at, and which block in the file	
-	}
-	
+    int bytes_read = 0;
+    while (bytes_read < count)
+    {
+        if (fcbArray[fd].buffer_index >= fcbArray[fd].buffer_length)
+        {
+            // Buffer is empty, read next chunk from file
+            int bytes_to_read = B_CHUNK_SIZE;
+            if (fcbArray[fd].file_index + bytes_to_read > fcbArray[fd].fi->fileSize)
+            {
+                bytes_to_read = fcbArray[fd].fi->fileSize - fcbArray[fd].file_index;
+            }
+            if (bytes_to_read <= 0) break; // End of file
 
+            int block_number = fcbArray[fd].fi->location + (fcbArray[fd].file_index / B_CHUNK_SIZE);
+            int blocks_read = LBAread(fcbArray[fd].buffer, (bytes_to_read + 511) / 512, block_number);
+            if (blocks_read <= 0) {
+                return -1;
+            }
+            fcbArray[fd].buffer_length = bytes_to_read;
+            fcbArray[fd].buffer_index = 0;
+            fcbArray[fd].file_index += bytes_to_read;
+        }
 
-// b_close frees and allocated memory and places the file control block back 
-// into the unused pool of file control blocks.
-int b_close (b_io_fd fd)
-	{
-	//*** TODO ***//  Release any resources
-	}
-	
+        int bytes_available = fcbArray[fd].buffer_length - fcbArray[fd].buffer_index;
+        int bytes_to_copy = count - bytes_read;
+        if (bytes_to_copy > bytes_available)
+        {
+            bytes_to_copy = bytes_available;
+        }
+
+        memcpy(buffer + bytes_read, fcbArray[fd].buffer + fcbArray[fd].buffer_index, bytes_to_copy);
+        fcbArray[fd].buffer_index += bytes_to_copy;
+        bytes_read += bytes_to_copy;
+    }
+
+    return bytes_read;
+}
+
+int b_close(b_io_fd fd)
+{
+    if ((fd < 0) || (fd >= MAXFCBS))
+    {
+        return -1;  // invalid file descriptor
+    }
+
+    if (fcbArray[fd].fi == NULL)  // File not open for this descriptor
+    {
+        return -1;
+    }
+
+    // Release resources
+    free(fcbArray[fd].buffer);
+    fcbArray[fd].fi = NULL;
+    fcbArray[fd].buffer = NULL;
+    fcbArray[fd].buffer_index = 0;
+    fcbArray[fd].buffer_length = 0;
+    fcbArray[fd].file_index = 0;
+
+    return 0;
+}
