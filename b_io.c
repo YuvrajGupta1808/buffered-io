@@ -117,7 +117,7 @@ int b_read(b_io_fd fd, char *buffer, int count) {
             bytes_to_copy = bytes_available;
         }
 
-        strncpy(buffer + bytes_read, fcbArray[fd].buffer + fcbArray[fd].buffer_index, bytes_to_copy);
+        memcpy(buffer + bytes_read, fcbArray[fd].buffer + fcbArray[fd].buffer_index, bytes_to_copy);
         fcbArray[fd].buffer_index += bytes_to_copy;
         bytes_read += bytes_to_copy;
     }
