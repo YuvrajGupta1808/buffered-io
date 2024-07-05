@@ -22,29 +22,25 @@
 #define MAXFCBS 20    // The maximum number of files open at one time
 #define B_CHUNK_SIZE 512  // Define the chunk size for buffering
 
-typedef struct b_fcb
-{
-    fileInfo *fi;        // holds the low level systems file info
+typedef struct b_fcb {
+    fileInfo *fi;        // holds the low-level system's file info
     char *buffer;        // buffer to hold file data
-    int buffer_index;    // index to track the current position in buffer
+    int buffer_index;    // index to track the current position in the buffer
     int buffer_length;   // length of valid data in the buffer
     int file_index;      // index to track the current position in the file
 } b_fcb;
-    
+
 // static array of file control blocks
 b_fcb fcbArray[MAXFCBS];
 
 // Indicates that the file control block array has not been initialized
-int startup = 0;  
+int startup = 0;
 
-void b_init()
-{
-    if (startup)
-        return;  // already initialized
+void b_init() {
+    if (startup) return;  // already initialized
 
-    // init fcbArray to all free
-    for (int i = 0; i < MAXFCBS; i++)
-    {
+    // Initialize fcbArray to all free
+    for (int i = 0; i < MAXFCBS; i++) {
         fcbArray[i].fi = NULL; // indicates a free fcbArray
     }
 
@@ -52,12 +48,9 @@ void b_init()
 }
 
 // Method to get a free File Control Block FCB element
-b_io_fd b_getFCB()
-{
-    for (int i = 0; i < MAXFCBS; i++)
-    {
-        if (fcbArray[i].fi == NULL)
-        {
+b_io_fd b_getFCB() {
+    for (int i = 0; i < MAXFCBS; i++) {
+        if (fcbArray[i].fi == NULL) {
             fcbArray[i].fi = (fileInfo *)-2; // used but not assigned
             return i;  // Not thread safe but okay for this project
         }
@@ -65,8 +58,7 @@ b_io_fd b_getFCB()
     return (-1);  // all in use
 }
 
-b_io_fd b_open(char *filename, int flags)
-{
+b_io_fd b_open(char *filename, int flags) {
     if (startup == 0) b_init();  // Initialize our system
 
     int fd = b_getFCB();
@@ -86,31 +78,25 @@ b_io_fd b_open(char *filename, int flags)
     return fd;
 }
 
-int b_read(b_io_fd fd, char *buffer, int count)
-{
+int b_read(b_io_fd fd, char *buffer, int count) {
     if (startup == 0) b_init();  // Initialize our system
 
-    // check that fd is between 0 and (MAXFCBS-1)
-    if ((fd < 0) || (fd >= MAXFCBS))
-    {
+    // Check that fd is between 0 and (MAXFCBS-1)
+    if ((fd < 0) || (fd >= MAXFCBS)) {
         return -1;  // invalid file descriptor
     }
 
-    // and check that the specified FCB is actually in use  
-    if (fcbArray[fd].fi == NULL || fcbArray[fd].buffer == NULL)  // File not open for this descriptor
-    {
+    // Check that the specified FCB is actually in use  
+    if (fcbArray[fd].fi == NULL || fcbArray[fd].buffer == NULL) {  // File not open for this descriptor
         return -1;
     }
 
     int bytes_read = 0;
-    while (bytes_read < count)
-    {
-        if (fcbArray[fd].buffer_index >= fcbArray[fd].buffer_length)
-        {
+    while (bytes_read < count) {
+        if (fcbArray[fd].buffer_index >= fcbArray[fd].buffer_length) {
             // Buffer is empty, read next chunk from file
             int bytes_to_read = B_CHUNK_SIZE;
-            if (fcbArray[fd].file_index + bytes_to_read > fcbArray[fd].fi->fileSize)
-            {
+            if (fcbArray[fd].file_index + bytes_to_read > fcbArray[fd].fi->fileSize) {
                 bytes_to_read = fcbArray[fd].fi->fileSize - fcbArray[fd].file_index;
             }
             if (bytes_to_read <= 0) break; // End of file
@@ -127,12 +113,11 @@ int b_read(b_io_fd fd, char *buffer, int count)
 
         int bytes_available = fcbArray[fd].buffer_length - fcbArray[fd].buffer_index;
         int bytes_to_copy = count - bytes_read;
-        if (bytes_to_copy > bytes_available)
-        {
+        if (bytes_to_copy > bytes_available) {
             bytes_to_copy = bytes_available;
         }
 
-        memcpy(buffer + bytes_read, fcbArray[fd].buffer + fcbArray[fd].buffer_index, bytes_to_copy);
+        strncpy(buffer + bytes_read, fcbArray[fd].buffer + fcbArray[fd].buffer_index, bytes_to_copy);
         fcbArray[fd].buffer_index += bytes_to_copy;
         bytes_read += bytes_to_copy;
     }
@@ -140,10 +125,8 @@ int b_read(b_io_fd fd, char *buffer, int count)
     return bytes_read;
 }
 
-int b_close(b_io_fd fd)
-{
-    if ((fd < 0) || (fd >= MAXFCBS))
-    {
+int b_close(b_io_fd fd) {
+    if ((fd < 0) || (fd >= MAXFCBS)) {
         return -1;  // invalid file descriptor
     }
 
